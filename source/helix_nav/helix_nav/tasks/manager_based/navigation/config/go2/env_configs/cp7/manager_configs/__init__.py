@@ -1,0 +1,1 @@
+# TODO(CP7): Add CP7 manager configurations for rewards and terminations.
