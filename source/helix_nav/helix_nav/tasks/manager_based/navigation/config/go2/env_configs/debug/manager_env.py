@@ -19,7 +19,7 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 from isaaclab.envs import ManagerBasedEnv
-from helix_nav.tasks.manager_based.navigation.config.go2.env_configs.debug.helixnav_debug_base_env import HelixNavDebugBaseEnvCfg
+from source.helix_nav.helix_nav.tasks.manager_based.navigation.config.go2.env_configs.debug.helixnav_debug_base_env_cfg import HelixNavDebugBaseEnvCfg
 
 
 # main 

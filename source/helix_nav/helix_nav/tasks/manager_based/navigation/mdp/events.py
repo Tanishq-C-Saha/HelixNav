@@ -54,7 +54,7 @@ def reset_map_and_spawn(
 
     # lazy initialize
     if not hasattr(env, "_nav_state_initialized"):
-        _init_nav_state(env)
+        init_nav_state(env)
 
     # *** 1. Generate maps for each reset env ***
     for idx, env_id in enumerate(env_ids.tolist()):
@@ -216,7 +216,7 @@ def _spawn_robot(
     asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
 
-def _init_nav_state(env: ManagerBasedEnv):
+def init_nav_state(env: ManagerBasedEnv):
     """One-time initialization of persistent navigation state."""
 
     # Get obstacle pool from scene

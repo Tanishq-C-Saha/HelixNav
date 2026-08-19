@@ -11,9 +11,7 @@ class EventsCfg:
     reset_map_and_spawn = EventTerm(
         func=mdp.reset_map_and_spawn,
         mode="reset",
-        params = {
+        params={
             "visualize_map": True
         }
     )
-
-    
