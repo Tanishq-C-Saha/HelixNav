@@ -7,6 +7,7 @@ from isaaclab.sensors import (
     CameraCfg,
     MultiMeshRayCasterCameraCfg,
     MultiMeshRayCasterCfg,
+    ContactSensorCfg
 )
 
 import isaaclab.sim as sim_utils
@@ -128,9 +129,14 @@ class HelixNavDebugBaseScene(InteractiveSceneCfg):
     )
 
     # collision sensors :
+    collision_sensor = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/robot/.*_(hip|thigh)|Head_(upper|lower)",
+        update_period=0.0,
+    )
 
     # walls
 
+    
     # north wall
     wall_north = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/wall_north",
@@ -311,11 +317,7 @@ class HelixNavDebugBaseScene(InteractiveSceneCfg):
                 diffuse_color=(0.2, 0.8, 0.3),
             ),
         ),
-        i
-
-
-@configclass
-class HelixNavDebugBaseScene(Interactinit_state=RigidObjectCfg.InitialStateCfg(
+        init_state=RigidObjectCfg.InitialStateCfg(
             pos=OBSTACLE_GRAVEYARD_POS
             # rot=()
         ),
