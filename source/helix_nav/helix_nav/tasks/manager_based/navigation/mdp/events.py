@@ -100,9 +100,13 @@ def reset_map_and_spawn(
         env._path_lengths[env_id] = 0
         env._paths_world[env_id] = 0.0
 
+        # make the remaining path 0 at reset event 
+        env._path_remaining[env_id] = 0
+        env._prev_path_remaining[env_id] = 0
+
         if path is not None:
             # Convert grid path to world coords
-            path_world = np.array([grid_to_world(r, c) for r, c in path])
+            path_world = np.array([grid_to_world(r, c) for r, c in path])   #! local world coordinates
             path_len = min(len(path_world), MAX_PATH_LENGTH)
             env._paths_world[env_id, :path_len, :] = torch.tensor(
                 path_world[:path_len], dtype=torch.float32, device=env.device
@@ -165,13 +169,13 @@ def _spawn_obstacles(env: ManagerBasedEnv, env_ids: torch.Tensor):
     env_origins = env.scene.env_origins  # don't clone, just read
 
     for i, obs in enumerate(env._static_obstacles):
-        pose = obs.data.root_com_pose_w.clone()
+        pose = torch.zeros(len(env_ids), 7, device=env.device)
 
         # Local coords + env origin (NOT in-place on stored positions)
         pose[env_ids, 0] = env._obstacles_pos[env_ids, i, 0] + env_origins[env_ids, 0]
         pose[env_ids, 1] = env._obstacles_pos[env_ids, i, 1] + env_origins[env_ids, 1]
         pose[env_ids, 2] = env._obstacles_pos[env_ids, i, 2] + env_origins[env_ids, 2]
-        pose[env_ids, 3:7] = torch.tensor([1.0, 0.0, 0.0, 0.0], device=env.device)
+        pose[env_ids, 3] = 1.0 
 
         obs.write_root_com_pose_to_sim(pose, env_ids=env_ids)
 
