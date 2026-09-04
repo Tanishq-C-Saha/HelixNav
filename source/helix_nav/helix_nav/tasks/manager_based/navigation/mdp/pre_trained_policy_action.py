@@ -85,7 +85,9 @@ class PreTrainedPolicyAction(ActionTerm):
     """
 
     def process_actions(self, actions: torch.Tensor):
-        self._raw_actions[:] = actions
+
+        # ! clipping the action so that ll policy can run good
+        self._raw_actions[:] = torch.clamp(actions, -1.0, 1.0)
 
     def apply_actions(self):
         if self._counter % self.cfg.low_level_decimation == 0:
