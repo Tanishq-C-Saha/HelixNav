@@ -32,7 +32,7 @@ def terminations_by_collisions(
 def goal_reached(
         env: ManagerBasedRLEnv,
         asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-        min_distance_threshold: float = 0.5,
+        min_distance_threshold: float = 0.3,
 ):
     """Fire termination when goal reached.(dist_to_goal <= threshold)"""
 
