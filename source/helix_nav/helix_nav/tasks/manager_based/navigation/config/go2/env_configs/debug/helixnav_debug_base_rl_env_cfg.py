@@ -14,8 +14,8 @@ from helix_nav.tasks.manager_based.navigation.config.go2.env_configs.debug.manag
     ActionsCfg,
     EventsCfg,
     RewardCfg,
-    TerminationsCfg
-
+    TerminationsCfg,
+    CommandsCfg
 )
 
 @configclass
@@ -33,12 +33,14 @@ class HelixNavDebugBaseRLEnvCfg(ManagerBasedRLEnvCfg):
 
     terminations = TerminationsCfg()
 
+    commands = CommandsCfg()
+
 
     def __post_init__(self):
         self.sim.dt = 1.0/200.0  # simulation @ 200Hz
         self.decimation = 20   # HL env running @ 10Hz
         self.scene.env_spacing = 12.2
-        self.scene.num_envs = 1  # jsut debug purpose
+        self.scene.num_envs = 2  # jsut debug purpose
         self.sim.render_interval = 4  # simulation rendering @50Hz
         self.seed = 100000
         self.episode_length_s = 60

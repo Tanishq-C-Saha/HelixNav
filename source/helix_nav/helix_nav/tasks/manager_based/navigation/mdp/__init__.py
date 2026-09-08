@@ -9,3 +9,7 @@ from .observations import *  # noqa: F401, F403
 from .terminations import * 
 
 from .rewards import *
+
+
+# commands
+from .commands import *
