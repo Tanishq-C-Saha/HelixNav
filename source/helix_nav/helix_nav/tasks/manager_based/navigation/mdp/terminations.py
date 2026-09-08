@@ -38,7 +38,7 @@ def goal_reached(
 
     robot: Articulation = env.scene[asset_cfg.name]
 
-    goal_w = env._goal_positions + env.scene.env_origins
+    goal_w = env._goal_positions_local + env.scene.env_origins
     goal_w[:, 2] = 0
 
     robot_w = robot.data.root_pos_w.clone()

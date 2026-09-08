@@ -105,7 +105,7 @@ def visualize_nav_states(
     """Convert raycaster hits to occupancy grids and plot with A* path per env.
     
     Args:
-        env: the environment (carries _paths_world, _start_positions, etc.)
+        env: the environment (carries _paths_world(local), _start_positions, etc.)
         env_ids: (N,) tensor of env indices to visualize
         hit_points_w: (num_envs, 3721, 3) raycaster hit points in world frame
         min_threshold: min z to count as occupied
@@ -126,10 +126,10 @@ def visualize_nav_states(
         path_len = int(env._path_lengths[env_id].item())
         path_world = None
         if path_len > 0:
-            path_world = env._paths_world[env_id, :path_len].cpu().numpy()
+            path_world = env._paths_local[env_id, :path_len].cpu().numpy()
         
-        start_world = env._start_positions[env_id].cpu().numpy()
-        goal_world = env._goal_positions[env_id].cpu().numpy()
+        start_world = env._start_positions_local[env_id].cpu().numpy()
+        goal_world = env._goal_positions_local[env_id].cpu().numpy()
         
         reset_count = int(env._reset_counter[env_id].item())
         seed_used = int(env_id * env._global_seed + reset_count - 1)

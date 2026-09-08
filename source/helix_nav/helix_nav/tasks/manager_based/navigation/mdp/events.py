@@ -79,13 +79,13 @@ def reset_map_and_spawn(
             env._obstacles_pos[env_id, obs_spec.pool_index, 2] = obs_spec.position[2]
 
         # Store start and goal (LOCAL coordinates)
-        env._start_positions[env_id, 0] = map_spec.start_position[0]
-        env._start_positions[env_id, 1] = map_spec.start_position[1]
-        env._start_positions[env_id, 2] = GO2_STANDING_HEIGHT
+        env._start_positions_local[env_id, 0] = map_spec.start_position[0]
+        env._start_positions_local[env_id, 1] = map_spec.start_position[1]
+        env._start_positions_local[env_id, 2] = GO2_STANDING_HEIGHT
 
-        env._goal_positions[env_id, 0] = map_spec.goal_position[0]
-        env._goal_positions[env_id, 1] = map_spec.goal_position[1]
-        env._goal_positions[env_id, 2] = GO2_STANDING_HEIGHT
+        env._goal_positions_local[env_id, 0] = map_spec.goal_position[0]
+        env._goal_positions_local[env_id, 1] = map_spec.goal_position[1]
+        env._goal_positions_local[env_id, 2] = GO2_STANDING_HEIGHT
 
         # Store occupancy grid will implement wioth multimesh raycaster
         env._occupancy_grids[env_id] = torch.tensor(
@@ -98,7 +98,7 @@ def reset_map_and_spawn(
 
         # Store path
         env._path_lengths[env_id] = 0
-        env._paths_world[env_id] = 0.0
+        env._paths_local[env_id] = 0.0
 
         # make the remaining path 0 at reset event 
         env._path_remaining[env_id] = 0
@@ -108,7 +108,7 @@ def reset_map_and_spawn(
             # Convert grid path to world coords
             path_world = np.array([grid_to_world(r, c) for r, c in path])   #! local world coordinates
             path_len = min(len(path_world), MAX_PATH_LENGTH)
-            env._paths_world[env_id, :path_len, :] = torch.tensor(
+            env._paths_local[env_id, :path_len, :] = torch.tensor(
                 path_world[:path_len], dtype=torch.float32, device=env.device
             )
             env._path_lengths[env_id] = path_len
@@ -194,8 +194,8 @@ def _spawn_robot(
     root_state = asset.data.default_root_state[env_ids].clone()
 
     # Position: local start + env origin
-    root_state[:, 0] = env._start_positions[env_ids, 0] + env_origins[env_ids, 0]
-    root_state[:, 1] = env._start_positions[env_ids, 1] + env_origins[env_ids, 1]
+    root_state[:, 0] = env._start_positions_local[env_ids, 0] + env_origins[env_ids, 0]
+    root_state[:, 1] = env._start_positions_local[env_ids, 1] + env_origins[env_ids, 1]
     root_state[:, 2] += env_origins[env_ids, 2]
 
     # Random yaw
@@ -242,9 +242,9 @@ def init_nav_state(env: ManagerBasedEnv):
     env._occupancy_grids = torch.zeros(
         env.num_envs, GRID_CELLS, GRID_CELLS, device=env.device
     )
-    env._start_positions = torch.zeros(env.num_envs, 3, device=env.device)
-    env._goal_positions = torch.zeros(env.num_envs, 3, device=env.device)
-    env._paths_world = torch.zeros(
+    env._start_positions_local = torch.zeros(env.num_envs, 3, device=env.device)
+    env._goal_positions_local = torch.zeros(env.num_envs, 3, device=env.device)
+    env._paths_local = torch.zeros(
         env.num_envs, MAX_PATH_LENGTH, 2, device=env.device
     )
     env._path_lengths = torch.zeros(

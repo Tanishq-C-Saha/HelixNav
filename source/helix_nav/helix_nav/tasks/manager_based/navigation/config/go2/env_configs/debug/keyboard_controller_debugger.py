@@ -96,7 +96,7 @@ def run_simulation(env: ManagerBasedEnv, keyboard_controller: Se2Keyboard):
             print(f"\n[DENUG]: Obs = {obs}\n\n")
 
             # debugging goals 
-            print(f"[DEBUG]: goal_position_w = {env._goal_positions + env.scene.env_origins}")
+            print(f"[DEBUG]: goal_position_w = {env._goal_positions_local + env.scene.env_origins}")
             print(f"[DEBUG]: robot_pose_w = {robot.data.root_pose_w}")
             print(f"[DEBUG]: robot_yaw_world = {euler_xyz_from_quat(robot.data.root_quat_w)}")
 

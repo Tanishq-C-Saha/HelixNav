@@ -17,7 +17,7 @@ def goal_reached_reward(
 
     robot: Articulation = env.scene[asset_cfg.name]
 
-    goal_w = env._goal_positions[:, :2] + env.scene.env_origins[:, :2]
+    goal_w = env._goal_positions_local[:, :2] + env.scene.env_origins[:, :2]
     
     robot_w = robot.data.root_pos_w[:, :2]
 

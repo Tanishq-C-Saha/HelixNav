@@ -61,7 +61,7 @@ def get_relative_goal_vector(
 
     robot: Articulation = env.scene[asset_cfg.name]
 
-    goal_w = env._goal_positions + env.scene.env_origins
+    goal_w = env._goal_positions_local + env.scene.env_origins
     robot_w = robot.data.root_pos_w.clone()
 
     diff_w = goal_w - robot_w
