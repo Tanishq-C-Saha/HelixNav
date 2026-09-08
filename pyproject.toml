@@ -103,6 +103,14 @@ docstring-code-format = true
 [tool.pyright]
 
 include = ["source", "scripts"]
+
+extraPaths = [
+    "/home/tanu/IsaacLab/source/isaaclab",
+    "/home/tanu/IsaacLab/source/isaaclab_assets",
+    "/home/tanu/IsaacLab/source/isaaclab_rl",
+    "/home/tanu/IsaacLab/source/isaaclab_tasks"
+]
+
 exclude = [
     "**/__pycache__",
     "**/_isaac_sim",
