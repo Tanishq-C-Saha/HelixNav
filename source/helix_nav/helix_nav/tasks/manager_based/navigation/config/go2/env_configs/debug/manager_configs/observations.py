@@ -7,11 +7,21 @@ from isaaclab.managers import SceneEntityCfg
 from helix_nav.tasks.manager_based.navigation import mdp
 
 
-
 # observations
 @configclass
 class ObservationsCfg:
-    """Observations for the HelixNav"""
+    """Observations for the HelixNav
+    policy
+        ├── prev_actions        → (N, 3)
+        ├── lookahead_vectors   → (N, 24)
+        ├── snap_flags          → (N, 8)
+        ├── base_velocity       → (N, 3)
+        ├── relative_goal       → (N, 3)
+        └── depth_images        → (N, 1, 54, 96)
+
+        Scalar: 3+24+8+3+3=41
+        Depth: 54x96
+    """
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -21,30 +31,32 @@ class ObservationsCfg:
             func=mdp.last_action
         )
 
-        # lookahead_waypoints = ObsTerm(
-        #     func=mdp.
-        # )
-
-        # current velocity 
-        current_lin_vel = ObsTerm(
-            func=mdp.base_lin_vel
+        lookahead_vectors = ObsTerm(
+            func=mdp.get_lookahead_vectors,
+            params={
+                "command_name": "navigation_goal",
+            },
         )
 
-        current_ang_vel = ObsTerm(
-            func=mdp.base_ang_vel
+        snap_flags = ObsTerm(
+            func=mdp.get_snap_flags,
+            params={
+                "command_name": "navigation_goal",
+            },
         )
 
-        # previous actions 
-        prev_actions = ObsTerm(
-            mdp.last_action
+        base_velocity = ObsTerm(
+            func=mdp.get_base_velocity,
         )
-        # TODO(cp8): migrate nav state to CommandTerm
+
         # relative goal vector with normalized distance
-        rel_goal_w = ObsTerm(
+        relative_goal = ObsTerm(
             func=mdp.get_relative_goal_vector,
             params={
+                "command_name": "navigation_goal",
+                "asset_cfg": SceneEntityCfg("robot"),
                 "arena_size": 12.0,
-            }
+            },
         )
 
         # SRU-GRU branch obs
@@ -58,6 +70,8 @@ class ObservationsCfg:
 
         def __post_init__(self):
             # so that we can receive dict form of obs and easy to debug
+            # Keep observations as a dictionary so the depth branch and
+            # vector branch can be handled separately later.
             self.concatenate_terms = False  
 
     policy = PolicyCfg()
