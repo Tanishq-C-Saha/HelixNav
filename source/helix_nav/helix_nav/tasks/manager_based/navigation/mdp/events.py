@@ -172,10 +172,10 @@ def _spawn_obstacles(env: ManagerBasedEnv, env_ids: torch.Tensor):
         pose = torch.zeros(len(env_ids), 7, device=env.device)
 
         # Local coords + env origin (NOT in-place on stored positions)
-        pose[env_ids, 0] = env._obstacles_pos[env_ids, i, 0] + env_origins[env_ids, 0]
-        pose[env_ids, 1] = env._obstacles_pos[env_ids, i, 1] + env_origins[env_ids, 1]
-        pose[env_ids, 2] = env._obstacles_pos[env_ids, i, 2] + env_origins[env_ids, 2]
-        pose[env_ids, 3] = 1.0 
+        pose[:, 0] = env._obstacles_pos[env_ids, i, 0] + env_origins[env_ids, 0]
+        pose[:, 1] = env._obstacles_pos[env_ids, i, 1] + env_origins[env_ids, 1]
+        pose[:, 2] = env._obstacles_pos[env_ids, i, 2] + env_origins[env_ids, 2]
+        pose[:, 3] = 1.0 
 
         obs.write_root_com_pose_to_sim(pose, env_ids=env_ids)
 
