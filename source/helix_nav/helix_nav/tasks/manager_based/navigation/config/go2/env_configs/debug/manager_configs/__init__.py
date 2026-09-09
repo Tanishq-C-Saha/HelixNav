@@ -5,3 +5,4 @@ from .events import EventsCfg
 from .rewards import RewardCfg
 from .terminations import TerminationsCfg
 from .commands import CommandsCfg
+from .curriculums import CurriculumsCfg

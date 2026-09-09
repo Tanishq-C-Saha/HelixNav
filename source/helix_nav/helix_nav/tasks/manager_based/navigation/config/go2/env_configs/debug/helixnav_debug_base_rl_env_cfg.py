@@ -15,7 +15,8 @@ from helix_nav.tasks.manager_based.navigation.config.go2.env_configs.debug.manag
     EventsCfg,
     RewardCfg,
     TerminationsCfg,
-    CommandsCfg
+    CommandsCfg,
+    CurriculumsCfg
 )
 
 @configclass
@@ -34,6 +35,8 @@ class HelixNavDebugBaseRLEnvCfg(ManagerBasedRLEnvCfg):
     terminations = TerminationsCfg()
 
     commands = CommandsCfg()
+
+    curriculum = CurriculumsCfg()
 
 
     def __post_init__(self):

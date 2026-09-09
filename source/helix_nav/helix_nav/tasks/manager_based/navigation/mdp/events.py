@@ -231,7 +231,7 @@ def init_nav_state(env: ManagerBasedEnv):
     env._map_generator = RandomMapGenerator(obstacle_pool=obstacle_pool)
 
     env._reset_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
-    env._current_difficulty = 1
+    env._current_difficulty = 1 
 
     if hasattr(env.cfg, "seed") and env.cfg.seed is not None:
         env._global_seed = env.cfg.seed

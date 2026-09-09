@@ -13,3 +13,6 @@ from .rewards import *
 
 # commands
 from .commands import *
+
+# curriculums
+from .curriculums import *
