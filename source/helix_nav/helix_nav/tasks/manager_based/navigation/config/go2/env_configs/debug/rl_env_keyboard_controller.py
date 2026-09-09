@@ -95,7 +95,7 @@ def run_simulation(env: ManagerBasedRLEnv, keyboard_controller: Se2Keyboard):
             obs, rewards, terminated, truncated, extras = env.step(nav_command)
 
             # debugging obs
-            print(f"\n[DENUG]: Obs rel_goal = {obs['policy']['rel_goal_w']}\n\n")
+            print(f"\n[DENUG]: Obs rel_goal = {obs['policy']['relative_goal']}\n\n")
 
             # reward manager debug
             print(f"[DEBUG]: reward_manager terms= {reward_manager._term_names}")
