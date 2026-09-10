@@ -31,6 +31,7 @@ class ActorHead(nn.Module):
             nn.ELU(),
 
             nn.Linear(64, output_dim),
+            nn.Tanh()  # bounded output [-1,1]
         )
 
     def forward(self, x):
