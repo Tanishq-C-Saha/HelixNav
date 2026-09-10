@@ -1,0 +1,111 @@
+# HelixNav CP7 — skrl PPO_RNN Configuration
+# ============================================
+#
+# Maps to: skrl.agents.torch.ppo.PPO_CFG dataclass fields
+# Agent:   skrl.agents.torch.ppo.PPO_RNN
+#
+# IMPORTANT: The standard train.py Runner auto-builds models from the "models"
+# section below. HelixNav uses custom models (SharedEncoder + GRU) via
+# build_models() — so either:
+#   (a) use train_cp7.py (custom script that calls build_models + PPO_RNN directly), or
+#   (b) modify train.py to intercept model creation before Runner.run()
+#
+# Rollouts (30) must equal the GRU sequence_length in skrl_policy.py.
+# At 10 Hz policy rate and 2048 envs: 30 steps × 2048 envs = 61,440 transitions per update.
+
+seed: 42
+
+# ─── Agent (PPO_RNN) ───────────────────────────────────────────────────
+agent:
+  class: PPO_RNN
+  # --- rollout / update cadence ---
+  rollouts: 30                    # steps between updates — MUST match GRU sequence_length
+  learning_epochs: 8              # PPO epochs per update
+  mini_batches: 4                 # mini-batches per epoch (30 * 2048 / 4 = 15360 per mini-batch)
+
+  # --- discount / GAE ---
+  discount_factor: 0.99
+  gae_lambda: 0.95
+
+  # --- learning rate ---
+  learning_rate: 3.0e-4           # single LR for both policy and value (but see shared-encoder note)
+  # learning_rate: [3.0e-4, 3.0e-4]  # uncomment for separate policy/value LR tuning
+  learning_rate_scheduler: null    # add KLAdaptiveLR later if KL divergence is unstable
+
+  # --- clipping ---
+  ratio_clip: 0.2                 # PPO clip epsilon
+  value_clip: 0.2                 # value function clip (set 0 to disable)
+  grad_norm_clip: 1.0             # global gradient norm clip (0.5 default, 1.0 more permissive for RNN)
+
+  # --- loss scaling ---
+  entropy_loss_scale: 0.01        # encourage exploration early; decay manually if needed
+  value_loss_scale: 1.0           # default 2.5 is aggressive; 1.0 for shared encoder stability
+
+  # --- early stopping ---
+  kl_threshold: 0.016             # stop epoch early if approx KL exceeds this (0 = disabled)
+
+  # --- episode handling ---
+  time_limit_bootstrap: true      # bootstrap value at truncation (episode_length_s timeout)
+  rewards_shaper: null             # no reward shaping here — PBRS is in the env reward terms
+
+  # --- exploration ---
+  random_timesteps: 0             # no random exploration — policy explores via log_std
+  learning_starts: 0              # start learning from the first rollout
+
+  # --- preprocessors ---
+  # RunningStandardScaler normalises observations online — critical for depth images
+  # whose raw range differs from scalar obs
+  observation_preprocessor: RunningStandardScaler
+  observation_preprocessor_kwargs:
+    size: 5225                    # total flat obs dim (5184 depth + 41 scalars)
+    device: null                  # auto-set to env.device
+
+  value_preprocessor: RunningStandardScaler
+  value_preprocessor_kwargs:
+    size: 1
+    device: null
+
+  state_preprocessor: null
+  state_preprocessor_kwargs: {}
+
+  # --- mixed precision ---
+  mixed_precision: false          # keep off until training is stable
+
+  # --- experiment / logging ---
+  experiment:
+    directory: "helixnav_cp7"
+    experiment_name: ""           # auto-populated by train script with timestamp
+    # "auto" resolves dynamically from the trainer's actual `timesteps` at run time
+    # (write_interval = timesteps/100, checkpoint_interval = timesteps/10) — scale-correct
+    # whether this is a short --max_iterations smoke test or a full run, unlike a fixed
+    # step count (e.g. 900) which silently logs nothing at all on a short run whose total
+    # timesteps never reach it. NOTE: whatever value this resolves to is compared against
+    # the raw env-timestep counter, not the rollout counter.
+    write_interval: auto
+    checkpoint_interval: auto
+    store_separately: false       # single checkpoint file (policy + value + optimizer)
+    wandb: false
+    # mlflow is not a field on this skrl version's ExperimentCfg (wandb is the only
+    # supported experiment tracker here) — train_cp7.py's config loader drops this key.
+    mlflow: false
+
+# ─── Trainer ───────────────────────────────────────────────────────────
+trainer:
+  class: SequentialTrainer
+  timesteps: 300000               # total env steps — ~100 PPO updates at rollouts=30 with 2048 envs
+                                  # increase to 1_000_000+ for real convergence runs
+  close_environment_at_exit: false  # Isaac Lab handles shutdown
+
+# ─── Models (for Runner auto-build — NOT used with build_models) ──────
+# The Runner reads this section to auto-construct models. Since HelixNav
+# uses a custom SharedEncoder + GRU architecture, this section is here
+# only as documentation. The custom train script ignores it.
+#
+# models:
+#   separate: false
+#   policy:
+#     class: GaussianMixin
+#     ...
+#   value:
+#     class: DeterministicMixin
+#     ...
