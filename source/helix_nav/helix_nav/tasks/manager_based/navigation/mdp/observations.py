@@ -44,6 +44,33 @@ def get_depth_images(
     return depth_images
 
 
+# flatten depth image as obs
+def get_flatten_depth_images(
+    env: ManagerBasedEnv,
+    sensor_cfg: SceneEntityCfg = MISSING,
+    data_type: str = "distance_to_camera",
+    normalize: bool = True,
+) -> torch.Tensor:
+    """Depth observation for the navigation policy, flattened to (N, H*W*C).
+
+    Flattening lets this term be concatenated with the 1-D scalar terms in
+    ObservationsCfg.policy (concatenate_terms=True requires every term in the
+    group to have the same number of dimensions).
+    """
+    depth_images = get_depth_images(env, sensor_cfg, data_type, normalize)
+    return flatten_obs_term(depth_images)
+
+
+def flatten_obs_term(obs: torch.Tensor) -> torch.Tensor:
+    """Modifier: flatten a term's non-batch dims to 1-D.
+
+    Used on ``depth_images`` (N, H, W, C) so it can be concatenated with the
+    1-D scalar terms in an observation group that has ``concatenate_terms=True``
+    — ``torch.cat`` requires every term to have the same number of dimensions.
+    """
+    return obs.reshape(obs.shape[0], -1)
+
+
 # calculate relative gaol vector
 def get_lookahead_vectors(
     env,
