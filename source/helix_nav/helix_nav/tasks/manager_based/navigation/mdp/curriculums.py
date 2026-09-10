@@ -42,11 +42,16 @@ def advance_map_difficulty(
 
     if thresholds is None:
         thresholds = {
-            1: 0.70,
-            2: 0.65,
-            3: 0.60,
-            4: 0.55,
+            "1": 0.70,
+            "2": 0.65,
+            "3": 0.60,
+            "4": 0.55,
         }
+
+    # CurriculumTermCfg.params passes through Hydra's config serialization
+    # (class_to_dict), which requires all dict keys to be strings — normalize
+    # back to int keys here, once, for the lookups below.
+    thresholds = {int(k): v for k, v in thresholds.items()}
 
     # skip recording on the very first reset (goal_pos_w not yet set)
     if env._curriculum_total_episodes == 0 and not hasattr(env, "_nav_state_initialized"):

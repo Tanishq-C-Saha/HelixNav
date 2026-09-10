@@ -17,7 +17,10 @@ class CurriculumsCfg:
             "window_size": 200,
             "min_episodes": 50,
             "max_difficulty": 3,
-            "thresholds": {1: 0.70, 2: 0.65},
+            # string keys: Hydra/class_to_dict (used by hydra_task_config) require all
+            # dict keys to be strings — advance_map_difficulty() normalizes these back
+            # to int keys internally.
+            "thresholds": {"1": 0.70, "2": 0.65},
             "max_episodes_per_level": 100_000,
         },
     )
