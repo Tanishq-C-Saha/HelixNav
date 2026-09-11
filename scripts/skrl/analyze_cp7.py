@@ -2,31 +2,26 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 """
-Play a trained HelixNav CP7 checkpoint with skrl's PPO_RNN — custom play script.
+Analyze a single problem seed with a trained HelixNav CP7 checkpoint — skrl PPO_RNN.
 ===================================================================================
 
-Mirrors train_cp7.py's reasoning: skrl 2.0.0's ``Runner`` (what the stock
-scripts/skrl/play.py uses) can't build our custom GRU+CNN models, and stock
-play.py additionally calls ``runner.agent.set_running_mode("eval")``, a method
-name from an older skrl API that doesn't exist on this skrl version's ``Agent``
-(it's ``enable_training_mode`` here). So this script builds the environment and
-models by hand — the same pattern as train_cp7.py/training_dryrun.py — loads a
-checkpoint, and runs a simple deterministic inference loop.
+Duplicate of play_cp7.py (see that script's docstring for the full rationale behind
+building the env/agent by hand instead of using stock play.py). The only behavioral
+difference: --analyze_seed forces EVERY map generation, for every env and every
+reset, to use that exact seed — instead of play_cp7's per-env/per-reset formula
+(env_id * global_seed + reset_counter). This is for isolating and repeatedly
+inspecting one specific map (e.g. one episode_metrics.csv flagged as a COLLISION or
+TIMEOUT) rather than sampling broadly across many random maps.
 
-Unlike training, play deliberately does NOT call ``agent.record_transition()``:
-for our asymmetric actor/critic (policy is not value), that method has a real
-bug when ``self.training`` is False (exactly play's case) — it skips the block
-that defines the local ``outputs`` variable, then unconditionally reaches
-``outputs.get("rnn", [])`` a few lines later, raising ``UnboundLocalError``.
-record_transition() also isn't needed for play (it only feeds memory/reward
-shaping for training) except for one thing it normally does as a side effect:
-carrying the GRU hidden state forward between steps and zeroing it on episode
-boundaries. This script replicates just that part manually.
+Because the map is now fixed, episode-to-episode variation you still see (e.g. across
+--num_episodes) comes only from the random spawn yaw mdp.events._spawn_robot picks
+on every reset — useful for checking whether a problem map is fragile to the robot's
+starting orientation, or fails regardless of it.
 
 Usage:
-    python scripts/skrl/play_cp7.py --task HelixNav-CP7-Play-v0
-    python scripts/skrl/play_cp7.py --task HelixNav-CP7-Play-v0 --checkpoint /path/to/agent_9000.pt
-    python scripts/skrl/play_cp7.py --task HelixNav-CP7-Play-v0 --video --video_length 200
+    python scripts/skrl/analyze_cp7.py --task HelixNav-CP7-Play-v0 --analyze_seed 17
+    python scripts/skrl/analyze_cp7.py --task HelixNav-CP7-Play-v0 --analyze_seed 17 --difficulty 3
+    python scripts/skrl/analyze_cp7.py --task HelixNav-CP7-Play-v0 --analyze_seed 17 --num_episodes 5
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -37,20 +32,32 @@ import sys
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description="Play a trained HelixNav CP7 checkpoint with skrl PPO_RNN.")
+parser = argparse.ArgumentParser(
+    description="Analyze one specific problem seed with a trained HelixNav CP7 checkpoint (skrl PPO_RNN)."
+)
+parser.add_argument(
+    "--analyze_seed",
+    type=int,
+    required=True,
+    help=(
+        "Force every map generation (every env, every reset) to use this exact seed, "
+        "so the same map is reproduced every time instead of play_cp7's normal "
+        "per-env/per-reset seed formula. This is the whole point of this script."
+    ),
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record a video of the play episode.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint. Defaults to the most recent checkpoint under this task's experiment log directory.")
-parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment.")
+parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment (torch/numpy/etc global seeding — unrelated to --analyze_seed, which only pins map generation).")
 parser.add_argument(
     "--difficulty",
     type=int,
     default=None,
     help=(
         "Pin the curriculum map difficulty (see CurriculumsCfg.map_difficulty's "
-        "thresholds, e.g. 1-3) for the whole play session, overriding curriculum "
+        "thresholds, e.g. 1-3) for the whole session, overriding curriculum "
         "advancement. Omit to use the curriculum's normal starting difficulty."
     ),
 )
@@ -58,19 +65,20 @@ parser.add_argument("--real-time", action="store_true", default=False, help="Run
 parser.add_argument(
     "--num_episodes",
     type=int,
-    default=100,
+    default=20,
     help=(
         "Stop after this many completed episodes (summed across all envs) and write a "
-        "trajectory plot per episode plus an aggregate metrics dashboard/CSV. Set to 0 "
-        "to run indefinitely instead (until the window is closed), like plain play — no "
-        "final dashboard is written in that case, but per-episode trajectory plots still are."
+        "trajectory plot per episode plus an aggregate metrics dashboard/CSV. Since "
+        "--analyze_seed fixes the map, every episode replays the same map (only spawn "
+        "yaw varies) — kept lower than play_cp7's default since there's less to sample. "
+        "Set to 0 to run indefinitely instead (until the window is closed)."
     ),
 )
 parser.add_argument(
     "--plot_dir",
     type=str,
     default=None,
-    help="Directory for trajectory plots / metrics dashboard / CSV. Defaults to <experiment log dir>/play_analysis.",
+    help="Directory for trajectory plots / metrics dashboard / CSV. Defaults to <experiment log dir>/analyze_analysis/<task>/seed_<analyze_seed>.",
 )
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -181,7 +189,7 @@ def build_ppo_cfg(raw_agent_cfg: dict, env, log_dir: str) -> PPO_CFG:
     experiment = {k: v for k, v in raw_experiment.items() if k in _EXPERIMENT_FIELDS}
     experiment["directory"] = os.path.dirname(log_dir)
     experiment["experiment_name"] = os.path.basename(log_dir)
-    # play never logs or checkpoints
+    # analyze never logs or checkpoints
     experiment["write_interval"] = 0
     experiment["checkpoint_interval"] = 0
     cfg_dict["experiment"] = experiment
@@ -191,7 +199,7 @@ def build_ppo_cfg(raw_agent_cfg: dict, env, log_dir: str) -> PPO_CFG:
 
 @hydra_task_config(args_cli.task, AGENT_CFG_ENTRY_POINT)
 def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
-    """Play a trained PPO_RNN checkpoint on HelixNav CP7."""
+    """Replay one fixed seed's map on a trained PPO_RNN checkpoint, for HelixNav CP7."""
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
@@ -224,18 +232,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
 
     if args_cli.video:
         video_kwargs = {
-            "video_folder": os.path.join(log_dir, "videos", "play"),
+            "video_folder": os.path.join(log_dir, "videos", "analyze"),
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
         }
-        print("[INFO] Recording video of play episode.")
+        print("[INFO] Recording video of analyze episode.")
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
     env = SkrlVecEnvWrapper(env, ml_framework="torch")
 
-    # ── build models + agent (no memory, no optimizer — play never trains) ──
+    # ── build models + agent (no memory, no optimizer — analyze never trains) ──
     models = build_models(env, sequence_length=rollouts)
     cfg = build_ppo_cfg(agent_cfg["agent"], env, log_dir)
 
@@ -250,16 +258,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
     )
     # sets up _rnn_initial_states (zeros) and _rnn_sequence_length, and puts both
     # models in eval mode via enable_models_training_mode(False) — exactly what
-    # play wants, and memory=None makes it skip memory tensor creation entirely.
+    # play/analyze wants, and memory=None makes it skip memory tensor creation entirely.
     agent.init(trainer_cfg=None)
     agent.enable_training_mode(False)
 
     # train_cp7.py replaces agent.optimizer with a deduplicated 3-param-group Adam
     # (see its build_deduplicated_optimizer) before any checkpoint is saved, so the
     # checkpoint's "optimizer" entry has 3 param groups. This agent never built that
-    # replacement (play never calls .step(), so there's no reason to) — its default
+    # replacement (analyze never calls .step(), so there's no reason to) — its default
     # PPO_RNN-constructed optimizer has 1 param group, and Optimizer.load_state_dict()
-    # requires an exact param-group-count match. Since play has no use for optimizer
+    # requires an exact param-group-count match. Since analyze has no use for optimizer
     # state at all, just don't load it — Agent.load() skips any checkpoint entry
     # that isn't in checkpoint_modules (with a warning) rather than erroring.
     del agent.checkpoint_modules["optimizer"]
@@ -268,10 +276,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
     agent.load(resume_path)
 
     # ── episode tracking (trajectories + navigation-RL evaluation metrics) ──
-    # Subfolder named after --task so multiple gym-registered tasks sharing the
-    # same experiment log dir (e.g. CP7 vs a long-range-nav variant) don't dump
-    # their trajectories/metrics into the same play_analysis/ folder.
-    plot_dir = args_cli.plot_dir or os.path.join(log_dir, "play_analysis", _task_subfolder(args_cli.task))
+    # analyze_analysis/<task>/seed_<analyze_seed>/ — a distinct top-level folder from
+    # play_cp7's play_analysis/, further split per analyzed seed, so repeated
+    # analysis runs on different problem seeds never overwrite each other.
+    plot_dir = args_cli.plot_dir or os.path.join(
+        log_dir, "analyze_analysis", _task_subfolder(args_cli.task), f"seed_{args_cli.analyze_seed}"
+    )
     num_envs = env.num_envs
     raw_env = env.unwrapped
 
@@ -300,31 +310,48 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
             "start_local": raw_env._start_positions_local[env_id].cpu().numpy(),
             "goal_local": raw_env._goal_positions_local[env_id].cpu().numpy(),
             "occupancy_grid": map_spec.occupancy_grid if map_spec is not None else None,
-            # mdp.events.reset_map_and_spawn computes seed = env_id * global_seed +
-            # reset_counter, then calls generate_with_retry(seed=seed) — which may
-            # itself try seed, seed+1, seed+2, ... on collision-free-map retries.
-            # map_spec.seed is the actual seed that produced THIS map (post-retry),
-            # so read it back here instead of re-deriving it.
+            # See below — generate_with_retry is monkeypatched to force
+            # args_cli.analyze_seed, but map_spec.seed is still read back here
+            # (rather than assumed) so a mismatch would be visible immediately.
             "seed": int(map_spec.seed) if map_spec is not None else None,
         }
 
     # ── inference loop ──
-    observations, _ = env.reset()
+    observations, _ = env.reset()  # first reset — lazily runs mdp.events.init_nav_state()
 
     if args_cli.difficulty is not None:
         # env._current_difficulty lives on the raw ManagerBasedRLEnv, not the skrl
         # wrapper — env.unwrapped resolves through it via skrl's Wrapper.__getattr__
         # proxy (gym's own .unwrapped protocol), but writes must target that raw
         # object directly (assignment doesn't go through the same proxy as reads).
-        #
-        # The reset just above is also the FIRST reset ever for this env, which
-        # lazily runs mdp.events.init_nav_state() and unconditionally hardcodes
-        # _current_difficulty = 1 — clobbering any pin set before it. So pin now,
-        # then reset again: this second reset's map generation (mdp.events.
-        # reset_map_and_spawn) reads the now-pinned value, so even the first
-        # visible episode is at the requested difficulty instead of 1.
         env.unwrapped._current_difficulty = args_cli.difficulty
-        observations, _ = env.reset()
+
+    # Force every map generation (any env, any reset) to use --analyze_seed instead
+    # of mdp.events.reset_map_and_spawn's normal env_id/reset_counter-derived seed.
+    # _map_generator only exists after init_nav_state (the reset just above), so this
+    # has to happen after that first reset, wrapping the instance method in place.
+    original_generate_with_retry = raw_env._map_generator.generate_with_retry
+
+    def _fixed_seed_generate_with_retry(difficulty, seed, max_attempts=20):
+        # `seed` (the caller's per-env/reset-counter value) is intentionally ignored.
+        return original_generate_with_retry(
+            difficulty=difficulty, seed=args_cli.analyze_seed, max_attempts=max_attempts
+        )
+
+    raw_env._map_generator.generate_with_retry = _fixed_seed_generate_with_retry
+
+    print(
+        f"[INFO] Analyzing seed={args_cli.analyze_seed}"
+        + (f", difficulty={args_cli.difficulty}" if args_cli.difficulty is not None else "")
+        + " — every reset (all envs) will regenerate this SAME map."
+    )
+
+    # Second reset: the first reset already generated maps using the normal formula
+    # (before difficulty was pinned / generate_with_retry was patched) — this one
+    # re-generates every env's map under the pin + fixed seed, so even the first
+    # visible episode reflects what was requested (same trick play_cp7 uses for
+    # --difficulty alone).
+    observations, _ = env.reset()
 
     for env_id in range(num_envs):
         episode_context[env_id] = snapshot_episode_context(env_id)
@@ -338,7 +365,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
             # CurriculumsCfg.map_difficulty can still advance _current_difficulty
             # on any reset that happens inside the upcoming env.step() (for envs
             # whose episode just ended) — re-assert the pin right before every
-            # step so no reset, for the rest of this play session, ever sees a
+            # step so no reset, for the rest of this session, ever sees a
             # difficulty other than the one requested.
             env.unwrapped._current_difficulty = args_cli.difficulty
 
@@ -358,7 +385,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
 
         with torch.inference_mode():
             actions, outputs = agent.act(observations, env.state(), timestep=0, timesteps=0)
-            # deterministic (mean) actions for play, not stochastic samples
+            # deterministic (mean) actions for analyze, not stochastic samples
             actions = outputs.get("mean_actions", actions)
 
             next_observations, rewards, terminated, truncated, infos = env.step(actions)
@@ -373,7 +400,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
             # record_transition() normally copies it forward into _rnn_initial_states for
             # the next step (and zeroes it on episode boundaries) — replicate just that
             # here, since record_transition() itself isn't safe to call in eval mode for
-            # our asymmetric policy/value models (see module docstring).
+            # our asymmetric policy/value models (see play_cp7.py's module docstring).
             if agent._rnn:
                 agent._rnn_initial_states["policy"] = agent._rnn_final_states["policy"]
                 if finished.numel():
@@ -429,8 +456,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
                         goal_world=ctx["goal_local"],
                         trajectory_world=trajectory,
                         title=(
-                            f"Play | Env {env_id} | D{ctx['difficulty']} | Episode {episode_counter} | "
-                            f"{outcome} | SPL={spl:.2f}"
+                            f"Analyze | seed={ctx['seed']} | Env {env_id} | D{ctx['difficulty']} | "
+                            f"Episode {episode_counter} | {outcome} | SPL={spl:.2f}"
                         ),
                         save_path=os.path.join(
                             plot_dir, "trajectories", f"env_{env_id}", f"ep_{episode_counter:04d}.jpg"
@@ -459,7 +486,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
     if episode_metrics:
         plot_episode_metrics_dashboard(
             episode_metrics,
-            title=f"HelixNav CP7 Play — {os.path.basename(resume_path)}",
+            title=f"HelixNav CP7 Analyze — seed={args_cli.analyze_seed} — {os.path.basename(resume_path)}",
             save_path=os.path.join(plot_dir, "metrics_summary.jpg"),
         )
         save_episode_metrics_csv(episode_metrics, os.path.join(plot_dir, "episode_metrics.csv"))
@@ -475,7 +502,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: dict):
         mean_reward = sum(m["cumulative_reward"] for m in episode_metrics) / n
 
         print("\n" + "=" * 60)
-        print(f"  PLAY SUMMARY — {n} episodes")
+        print(f"  ANALYZE SUMMARY — seed={args_cli.analyze_seed} — {n} episodes")
         print("=" * 60)
         print(f"  Success rate:            {success_rate:.1f}%")
         print(f"  Collision rate:          {collision_rate:.1f}%")
