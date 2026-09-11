@@ -13,7 +13,13 @@ from helix_nav.tasks.manager_based.navigation.map_generators import (
     inflate_grid,
     CELLS,
     astar,
-    grid_to_world
+    grid_to_world,
+)
+from helix_nav.tasks.manager_based.navigation.map_generators.large_map_generators.random_map_gen_universal import (
+    UniversalRandomMapGenerator,
+)
+from helix_nav.tasks.manager_based.navigation.map_generators.large_map_generators.grid_utils_universal import (
+    grid_to_world as grid_to_world_universal,
 )
 
 
@@ -36,11 +42,35 @@ GO2_STANDING_HEIGHT = 0.34
 MAX_OBSTACLES = 15
 
 
+def resample_path(path_world: np.ndarray, max_points: int) -> np.ndarray:
+    """Resample an A* path to at most `max_points`, preserving start/goal.
+
+    Truncating a path (path_world[:max_points]) silently drops everything
+    past the cutoff, including the goal, on any path longer than max_points.
+    This instead evenly samples indices across the whole path so the full
+    route (endpoints included) is always represented within the fixed-size
+    tensor.
+    """
+
+    n = len(path_world)
+
+    if n <= max_points:
+        return path_world
+
+    indices = np.linspace(0, n - 1, max_points).round().astype(int)
+
+    return path_world[indices]
+
+
 def reset_map_and_spawn(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     visualize_map: bool = False,
+    use_large_map_generator: bool = False,
+    arena_size: float = 12.0,
+    resolution: float = 0.2,
+    difficulty_configs: dict | None = None,
 ):
     """
     Reset event: generate new map, place obstacles, run A*, spawn robot.
@@ -50,11 +80,27 @@ def reset_map_and_spawn(
         2. Write obstacle positions to sim
         3. Store occupancy grid + run A*
         4. Spawn robot at start position
+
+    Map generator selection (chosen once, at lazy init — see init_nav_state):
+        use_large_map_generator=False (default): normal 12m RandomMapGenerator,
+            identical to prior behavior.
+        use_large_map_generator=True: UniversalRandomMapGenerator for a square
+            arena of `arena_size` meters at `resolution` m/cell. `arena_size`
+            must match the scene's actual wall placement — this event does not
+            move walls. `difficulty_configs` optionally overrides the default
+            (40m-reference-scaled) per-difficulty obstacle count / goal
+            distance table; see random_map_gen_universal.scaled_difficulty_configs.
     """
 
     # lazy initialize
     if not hasattr(env, "_nav_state_initialized"):
-        init_nav_state(env)
+        init_nav_state(
+            env,
+            use_large_map_generator=use_large_map_generator,
+            arena_size=arena_size,
+            resolution=resolution,
+            difficulty_configs=difficulty_configs,
+        )
 
     # *** 1. Generate maps for each reset env ***
     for idx, env_id in enumerate(env_ids.tolist()):
@@ -106,18 +152,22 @@ def reset_map_and_spawn(
 
         if path is not None:
             # Convert grid path to world coords
-            path_world = np.array([grid_to_world(r, c) for r, c in path])   #! local world coordinates
-            path_len = min(len(path_world), MAX_PATH_LENGTH)
-            env._paths_local[env_id, :path_len, :] = torch.tensor(
-                path_world[:path_len], dtype=torch.float32, device=env.device
-            )
-            env._path_lengths[env_id] = path_len
+            path_world = np.array([env._grid_to_world_fn(r, c) for r, c in path])   #! local world coordinates
 
-            # Compute initial path_remaining (arc length)
+            # Compute path_remaining (arc length) from the FULL A* path,
+            # before resampling — resampling only affects how many
+            # waypoints are stored, not the actual route distance.
             diffs = path_world[1:] - path_world[:-1]
             arc_length = float(np.sqrt((diffs**2).sum(axis=1)).sum())
             env._path_remaining[env_id] = arc_length
             env._prev_path_remaining[env_id] = arc_length
+
+            path_sampled = resample_path(path_world, MAX_PATH_LENGTH)
+            path_len = len(path_sampled)
+            env._paths_local[env_id, :path_len, :] = torch.tensor(
+                path_sampled, dtype=torch.float32, device=env.device
+            )
+            env._path_lengths[env_id] = path_len
 
             if visualize_map:
                 """Used to visualize the map."""
@@ -220,18 +270,45 @@ def _spawn_robot(
     asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
 
-def init_nav_state(env: ManagerBasedEnv):
-    """One-time initialization of persistent navigation state."""
+def init_nav_state(
+    env: ManagerBasedEnv,
+    use_large_map_generator: bool = False,
+    arena_size: float = 40.0,
+    resolution: float = 0.2,
+    difficulty_configs: dict | None = None,
+):
+    """One-time initialization of persistent navigation state.
+
+    Picks the map generator ONCE, here, and never again for this env's
+    lifetime — reset_map_and_spawn only reaches this on the first reset
+    (see the `_nav_state_initialized` lazy-init guard), so later calls with
+    different `use_large_map_generator`/`arena_size` args are ignored.
+    """
 
     # Get obstacle pool from scene
     static_obstacles_dict = get_obstacle_pool(env)
     obstacle_pool = static_obstacles_dict["static_obstacles_pool"]
     env._static_obstacles = static_obstacles_dict["static_obstacles"]
 
-    env._map_generator = RandomMapGenerator(obstacle_pool=obstacle_pool)
+    env._use_large_map_generator = use_large_map_generator
+
+    if use_large_map_generator:
+        env._map_generator = UniversalRandomMapGenerator(
+            arena_size=arena_size,
+            resolution=resolution,
+            obstacle_pool=obstacle_pool,
+            difficulty_configs=difficulty_configs,
+        )
+        arena = env._map_generator.arena
+        grid_cells = arena.cells
+        env._grid_to_world_fn = lambda row, col, _arena=arena: grid_to_world_universal(_arena, row, col)
+    else:
+        env._map_generator = RandomMapGenerator(obstacle_pool=obstacle_pool)
+        grid_cells = CELLS
+        env._grid_to_world_fn = grid_to_world
 
     env._reset_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
-    env._current_difficulty = 1 
+    env._current_difficulty = 1
 
     if hasattr(env.cfg, "seed") and env.cfg.seed is not None:
         env._global_seed = env.cfg.seed
@@ -240,7 +317,7 @@ def init_nav_state(env: ManagerBasedEnv):
 
     # Per-env persistent tensors
     env._occupancy_grids = torch.zeros(
-        env.num_envs, GRID_CELLS, GRID_CELLS, device=env.device
+        env.num_envs, grid_cells, grid_cells, device=env.device
     )
     env._start_positions_local = torch.zeros(env.num_envs, 3, device=env.device)
     env._goal_positions_local = torch.zeros(env.num_envs, 3, device=env.device)
