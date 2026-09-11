@@ -29,3 +29,19 @@ gym.register(
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
     },
 )
+
+
+# test long range navigation(40m) on Cp7 short range trained checkpoint(12m)
+gym.register(
+    id="HelixNav-Test-Long-Range-CP7-Play-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            "helix_nav.tasks.manager_based.navigation.config.go2"
+            ".env_configs.test.test_env:HelixNavCP7TestRLEnvPlayCfg"
+        ),
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+    },
+)
+
